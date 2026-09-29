@@ -20,6 +20,12 @@ const isLegacyDefaultPrompt = (p) =>
 const resolvePrompt = (stored) =>
   !stored || isLegacyDefaultPrompt(stored) ? DEFAULT_SYSTEM_PROMPT : stored;
 
+const DEFAULT_API_BASE_URL = 'https://openrouter.ai/api/v1';
+
+// Trimmed, without trailing slashes, so `${base}/models` is always valid
+const getBaseUrl = () =>
+  (document.getElementById('api-base-url').value.trim() || DEFAULT_API_BASE_URL).replace(/\/+$/, '');
+
 // Initialize popup
 document.addEventListener('DOMContentLoaded', async () => {
   await loadSavedSettings();
@@ -31,6 +37,7 @@ function setupEventListeners() {
   document.getElementById('save-settings').addEventListener('click', saveAllSettings);
   document.getElementById('reset-prompt').addEventListener('click', resetSystemPrompt);
   document.getElementById('api-key').addEventListener('input', handleApiKeyInput);
+  document.getElementById('api-base-url').addEventListener('change', handleApiKeyInput);
 }
 
 // Handle API key input changes
@@ -38,7 +45,7 @@ function handleApiKeyInput() {
   const apiKey = document.getElementById('api-key').value.trim();
   const modelSelect = document.getElementById('model-select');
 
-  if (apiKey && apiKey.startsWith('sk-')) {
+  if (apiKey) {
     modelSelect.disabled = false;
     loadModels();
   } else {
@@ -67,8 +74,11 @@ async function loadSavedSettings() {
     const result = await chrome.storage.sync.get([
       'openrouterApiKey',
       'openrouterSelectedModel',
+      'apiBaseUrl',
       'systemPrompt'
     ]);
+
+    document.getElementById('api-base-url').value = result.apiBaseUrl || DEFAULT_API_BASE_URL;
 
     // Load system prompt
     const systemPrompt = resolvePrompt(result.systemPrompt);
@@ -101,7 +111,7 @@ async function loadSavedSettings() {
   }
 }
 
-// Load available models from OpenRouter API
+// Load available models from the configured OpenAI-compatible /models endpoint
 async function loadModels() {
   const apiKey = document.getElementById('api-key').value.trim();
   const modelSelect = document.getElementById('model-select');
@@ -117,7 +127,7 @@ async function loadModels() {
   modelSelect.disabled = true;
 
   try {
-    const response = await fetch('https://openrouter.ai/api/v1/models', {
+    const response = await fetch(`${getBaseUrl()}/models`, {
       headers: {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json'
@@ -130,8 +140,7 @@ async function loadModels() {
 
     const data = await response.json();
 
-    // Sort OpenRouter models alphabetically
-    const models = data.data.sort((a, b) => a.id.localeCompare(b.id));
+    const models = (data.data || []).sort((a, b) => a.id.localeCompare(b.id));
 
     // Populate datalist options
     modelList.innerHTML = '';
@@ -149,7 +158,7 @@ async function loadModels() {
   } catch (error) {
     console.error('Error loading models:', error);
     modelList.innerHTML = '<option value="Error loading models"></option>';
-    showStatus('Error loading models. Check your API key.', 'error');
+    showStatus('Error loading models. Check your API URL and key.', 'error');
   } finally {
     modelSelect.disabled = false;
   }
@@ -160,6 +169,12 @@ async function saveAllSettings() {
   const apiKey = document.getElementById('api-key').value.trim();
   const selectedModel = document.getElementById('model-select').value.trim();
   const systemPrompt = document.getElementById('system-prompt').value.trim();
+  const apiBaseUrl = getBaseUrl();
+
+  if (!/^https?:\/\//.test(apiBaseUrl)) {
+    showStatus('API base URL must start with http:// or https://', 'error');
+    return;
+  }
 
   // Validate model
   if (!selectedModel) {
@@ -175,6 +190,7 @@ async function saveAllSettings() {
 
   try {
     await chrome.storage.sync.set({
+      apiBaseUrl,
       openrouterApiKey: apiKey,
       openrouterSelectedModel: selectedModel,
       systemPrompt

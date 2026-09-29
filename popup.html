@@ -238,16 +238,22 @@
     <h3>WPML AI Translation</h3>
 
     <div class="section">
+      <label for="api-base-url">API Base URL</label>
+      <input type="url" id="api-base-url" placeholder="https://openrouter.ai/api/v1">
+      <div class="help-text">Any OpenAI-compatible endpoint, e.g. https://api.openai.com/v1</div>
+    </div>
+
+    <div class="section">
       <label for="api-key">
-        OpenRouter API Key
+        API Key
         <span id="api-key-status" class="api-key-status"></span>
       </label>
-      <input type="password" id="api-key" placeholder="sk-or-v1-...">
+      <input type="password" id="api-key" placeholder="sk-...">
     </div>
 
     <div class="section">
       <label for="model-select">AI Model</label>
-      <input list="model-list" id="model-select" placeholder="Type to search models (e.g., openai/gpt-4o-mini)..." disabled>
+      <input list="model-list" id="model-select" placeholder="Type to search models..." disabled>
       <datalist id="model-list">
         <option value="Loading models..."></option>
       </datalist>

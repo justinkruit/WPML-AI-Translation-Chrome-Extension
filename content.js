@@ -2,7 +2,9 @@
   // ---------------------------------------------------------------------------
   // Settings
   // ---------------------------------------------------------------------------
+  const DEFAULT_API_BASE_URL = "https://openrouter.ai/api/v1";
   let apiKey = "";
+  let apiBaseUrl = DEFAULT_API_BASE_URL;
   let selectedModel = "openai/gpt-5.6-luna";
   let systemPrompt = "";
 
@@ -39,9 +41,11 @@ Output: ONLY the translated text.`;
       const result = await chrome.storage.sync.get([
         'openrouterApiKey',
         'openrouterSelectedModel',
+        'apiBaseUrl',
         'systemPrompt'
       ]);
       apiKey = result.openrouterApiKey || "";
+      apiBaseUrl = result.apiBaseUrl || DEFAULT_API_BASE_URL;
       selectedModel = result.openrouterSelectedModel || selectedModel;
       systemPrompt = resolvePrompt(result.systemPrompt);
       console.log('[AI Translate] Settings loaded:', { hasApiKey: !!apiKey, model: selectedModel });
@@ -54,6 +58,7 @@ Output: ONLY the translated text.`;
 
   chrome.storage.onChanged.addListener((changes, namespace) => {
     if (namespace !== 'sync') return;
+    if (changes.apiBaseUrl) apiBaseUrl = changes.apiBaseUrl.newValue || DEFAULT_API_BASE_URL;
     if (changes.openrouterApiKey) apiKey = changes.openrouterApiKey.newValue || "";
     if (changes.openrouterSelectedModel) selectedModel = changes.openrouterSelectedModel.newValue || selectedModel;
     if (changes.systemPrompt) systemPrompt = resolvePrompt(changes.systemPrompt.newValue);
@@ -253,23 +258,24 @@ Output: ONLY the translated text.`;
   };
 
   // ---------------------------------------------------------------------------
-  // OpenRouter
+  // OpenAI-compatible chat completions (OpenRouter by default)
   // ---------------------------------------------------------------------------
   const activeControllers = new Set();
 
-  const callOpenRouter = async (messages, extra = {}) => {
+  const callApi = async (messages, extra = {}) => {
     const controller = new AbortController();
     activeControllers.add(controller);
     const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     try {
-      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      const headers = { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` };
+      // OpenRouter attribution headers; other servers may reject unknown headers in CORS preflight
+      if (apiBaseUrl.includes("openrouter.ai")) {
+        headers["HTTP-Referer"] = "https://wpml.org";
+        headers["X-Title"] = "WPML AI Translation";
+      }
+      const response = await fetch(`${apiBaseUrl}/chat/completions`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${apiKey}`,
-          "HTTP-Referer": "https://wpml.org",
-          "X-Title": "WPML AI Translation"
-        },
+        headers,
         body: JSON.stringify({ model: selectedModel, messages, max_tokens: 16000, ...extra }),
         signal: controller.signal
       });
@@ -362,7 +368,7 @@ Output: ONLY the translated text.`;
 
   const translateSingle = async (text, langs, ctx) => {
     const { masked, tokens } = protect(text);
-    const ask = () => callOpenRouter([
+    const ask = () => callApi([
       { role: "system", content: systemPrompt },
       { role: "user", content: `${contextBlock(ctx)}Translate the following text from ${langs.source || 'the source language'} to ${langs.target}. Output only the translation.\n\nTEXT:\n${masked}` }
     ]);
@@ -404,7 +410,7 @@ Output: ONLY the translated text.`;
       `Respond with ONLY a JSON object mapping each segment ID to its translated string, e.g. {"123": "translated text"}. ` +
       `Include every ID exactly once. No markdown, no comments.`;
 
-    const content = await callOpenRouter([
+    const content = await callApi([
       { role: "system", content: systemPrompt },
       { role: "user", content: `${instructions}\n\n${JSON.stringify(payload, null, 1)}` }
     ], { response_format: { type: "json_object" } });
@@ -467,7 +473,7 @@ Output: ONLY the translated text.`;
 
   const ensureReady = () => {
     if (!apiKey) {
-      alert("Please configure your OpenRouter API key in the extension popup first.");
+      alert("Please configure your API key in the extension popup first.");
       return null;
     }
     const langs = getLanguages();
@@ -733,7 +739,7 @@ Output: ONLY the translated text.`;
 
   const translateAllViaApi = async () => {
     if (!apiKey) {
-      alert("Please configure your OpenRouter API key in the extension popup first.");
+      alert("Please configure your API key in the extension popup first.");
       return;
     }
     if (busy) return;
