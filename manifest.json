@@ -11,7 +11,8 @@
     {
       "matches": [
         "*://wpml.org/*",
-        "*://*.wpml.org/*"
+        "*://*.wpml.org/*",
+        "*://*/*wp-admin/admin.php*"
       ],
       "js": [
         "content.js"

@@ -80,3 +80,8 @@
 @keyframes wai-pulse {
   50% { opacity: 0.3; }
 }
+
+/* String Translation page (wp-admin): sits above the strings table */
+#wai-panel.wai-strings {
+  margin: 8px 0;
+}

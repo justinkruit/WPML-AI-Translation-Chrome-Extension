@@ -108,7 +108,6 @@ function setupEditorTools() {
     }
   });
 }
-}
 
 // Handle API key input changes
 function handleApiKeyInput() {

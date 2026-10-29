@@ -59,6 +59,10 @@ Open any job in the WPML Advanced Translation Editor (any `wpml.org` host, e.g. 
 | **Translate All** | Same batch translation, but fills and saves each segment through the editor UI. Slower, but you can watch it work. |
 | **Translate Segment** | Translates the currently open segment in place without saving, so you can review it first (press ↓ to save). |
 | **Stop** | Cancels running AI requests and stops the loop. |
+### String Translation
+
+On your WordPress site, open **WPML → String Translation**. A toolbar appears above the strings table. Tick strings with WPML's own checkboxes and click **Translate selected**: they're translated into all languages, saved, and the page reloads. If a selected string already has translations, you're asked before they're overwritten. Only ticked strings on the current page count, so show more strings per page to do more at once.
+
 ### When WPML changes the editor
 
 Open the extension popup and expand **Editor tools & self-repair** (collapsed by default). It shows a health check of the open editor tab and has these tools, which work even if WPML's page changes so much that the toolbar can't be shown:

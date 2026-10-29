@@ -1,4 +1,9 @@
 (function () {
+  // Also declared for every wp-admin page (any site can run WPML); only the
+  // String Translation page there is of interest
+  const onStringsPage = !!document.querySelector('tr[data-string]');
+  if (!onStringsPage && !/(^|\.)wpml\.org$/.test(location.hostname)) return;
+
   // ---------------------------------------------------------------------------
   // Settings
   // ---------------------------------------------------------------------------
@@ -913,6 +918,37 @@ Output: ONLY the translated text.`;
     await Promise.all(lanes);
   };
 
+  // Translates segments in batches (single requests as fallback) and saves each
+  // result with save(seg, text). Fatal API errors are rethrown; others are counted.
+  const translateAndSave = async (segments, langs, stats, save, contextList = segmentIndex) => {
+    const batches = makeBatches(segments);
+    setStatus(`Translating ${segments.length} segments to ${langs.target} in ${batches.length} batch(es)…`);
+    const batchPromises = startBatchTranslations(batches, langs);
+
+    for (let b = 0; b < batches.length && !stopRequested; b++) {
+      const res = await batchPromises[b];
+      if (stopRequested) break;
+      if (!res.ok && res.error?.fatal) throw res.error;
+      const translations = res.ok ? res.result : {};
+      if (!res.ok) console.error(`[AI Translate] Batch ${b + 1} failed, falling back to single requests:`, res.error);
+
+      await runLimited(batches[b], SAVE_CONCURRENCY, async (seg) => {
+        try {
+          const text = translations[seg.id] || await translateSingle(seg.source, langs, buildContext(seg.id, seg.context, contextList));
+          if (stopRequested) return;
+          await save(seg, text);
+          stats.done++;
+        } catch (e) {
+          if (e.fatal) throw e;
+          stats.failed++;
+          rememberError(e);
+          console.error(`[AI Translate] Segment ${seg.id} failed:`, e);
+        }
+        setStatus(`Saved ${stats.done} / ${stats.total}${stats.failed ? ` (${stats.failed} failed)` : ''}…`);
+      });
+    }
+  };
+
   const translateAllViaApi = async () => {
     if (!apiKey) {
       alert("Please configure your API key in the extension popup first.");
@@ -948,32 +984,7 @@ Output: ONLY the translated text.`;
         return;
       }
 
-      const batches = makeBatches(todo);
-      setStatus(`Translating ${todo.length} segments in ${batches.length} batch(es)…`);
-      const batchPromises = startBatchTranslations(batches, langs);
-
-      for (let b = 0; b < batches.length && !stopRequested; b++) {
-        const res = await batchPromises[b];
-        if (stopRequested) break;
-        if (!res.ok && res.error?.fatal) throw res.error;
-        const translations = res.ok ? res.result : {};
-        if (!res.ok) console.error(`[AI Translate] Batch ${b + 1} failed, falling back to single requests:`, res.error);
-
-        await runLimited(batches[b], SAVE_CONCURRENCY, async (seg) => {
-          try {
-            const text = translations[seg.id] || await translateSingle(seg.source, langs, buildContext(seg.id, seg.context));
-            if (stopRequested) return;
-            await saveSegmentViaApi(seg.id, xliffId, text);
-            stats.done++;
-          } catch (e) {
-            if (e.fatal) throw e;
-            stats.failed++;
-            rememberError(e);
-            console.error(`[AI Translate] API segment ${seg.id} failed:`, e);
-          }
-          setStatus(`Saved ${stats.done} / ${stats.total}${stats.failed ? ` (${stats.failed} failed)` : ''}…`);
-        });
-      }
+      await translateAndSave(todo, langs, stats, (seg, text) => saveSegmentViaApi(seg.id, xliffId, text));
 
       if (stopRequested) {
         setStatus(`Stopped. ${stats.done} saved, ${stats.failed} failed. Reload the page to see them.`);
@@ -1000,6 +1011,119 @@ Output: ONLY the translated text.`;
     activeControllers.forEach((c) => c.abort());
     activeControllers.clear();
     setStatus("Stopping…");
+  };
+
+  // ---------------------------------------------------------------------------
+  // WPML String Translation page (wp-admin on the site itself). Translates the
+  // strings ticked with WPML's own checkboxes and saves them through the same
+  // ajax action WPML's inline editor uses.
+  // ---------------------------------------------------------------------------
+  const STRING_NOT_TRANSLATED = '0';
+
+  const selectedStrings = () => [...document.querySelectorAll('tr[data-string]')]
+    .filter((tr) => tr.querySelector('.js-icl-st-row-cb')?.checked)
+    .map((tr) => JSON.parse(tr.dataset.string))
+    .filter((s) => s.value?.trim());
+
+  // wp_localize_script output: var wpml_st_main_ui = {...JSON...};
+  const readStringsConfig = () => {
+    const js = document.getElementById('wpml-main-ui-ui-js-extra')?.textContent || '';
+    try { return JSON.parse(js.match(/wpml_st_main_ui\s*=\s*(\{[\s\S]*\});/)[1]); } catch { return null; }
+  };
+
+  const saveStringTranslation = async (cfg, id, lang, translation) => {
+    const { endpoint, nonce } = cfg.endpoints.saveTranslation;
+    const res = await fetch(new URL('admin-ajax.php', location.href), {
+      method: 'POST',
+      credentials: 'same-origin',
+      body: new URLSearchParams({ action: 'wpml_action', endpoint, nonce, data: JSON.stringify({ id, translation, lang }) }),
+    });
+    const json = await res.json().catch(() => null);
+    if (!res.ok || json?.success !== true) throw new Error(`Saving string ${id} failed (status ${res.status})`);
+  };
+
+  const translateStringsPage = async () => {
+    if (!apiKey) {
+      alert("Please configure your API key in the extension popup first.");
+      return;
+    }
+    const cfg = readStringsConfig();
+    if (!cfg?.endpoints?.saveTranslation) {
+      setStatus("Could not read WPML's string settings on this page; WPML may have changed it.");
+      return;
+    }
+    if (busy) return;
+    const strings = selectedStrings();
+    if (!strings.length) {
+      setStatus("Tick the strings to translate first.");
+      return;
+    }
+    const existing = strings.filter((s) => s.status !== STRING_NOT_TRANSLATED).length;
+    if (existing && !confirm(`${existing} of the selected strings already have translations. Overwrite them?`)) return;
+
+    busy = true;
+    stopRequested = false;
+    setBusyUI(true);
+    const stats = { done: 0, failed: 0, total: 0 };
+    try {
+      const langName = (code) => cfg.languageDetails?.[code]?.english_name || code;
+      const pageLangs = JSON.parse(document.querySelector('th[data-langs]')?.dataset.langs || '[]');
+
+      // One list per language pair, e.g. "en>de"
+      const pairs = {};
+      strings.forEach((s) => {
+        pageLangs.filter((l) => l !== s.string_language).forEach((l) => {
+          (pairs[`${s.string_language}>${l}`] ||= []).push({ id: s.string_id, source: s.value, context: `${s.context} / ${s.name}` });
+        });
+      });
+      stats.total = Object.values(pairs).reduce((n, list) => n + list.length, 0);
+
+      for (const [pair, list] of Object.entries(pairs)) {
+        if (stopRequested) break;
+        const [source, target] = pair.split('>');
+        await translateAndSave(list, { source: langName(source), target: langName(target) }, stats,
+          (seg, text) => saveStringTranslation(cfg, seg.id, target, text), list);
+      }
+
+      if (stopRequested) {
+        setStatus(`Stopped. ${stats.done} saved, ${stats.failed} failed. Reload the page to see them.`);
+      } else {
+        setStatus(`Done. ${stats.done} saved${stats.failed ? `, ${stats.failed} failed` : ''}. Reloading…`);
+        setTimeout(() => location.reload(), 2500);
+      }
+    } catch (e) {
+      stopAll();
+      if (e.name !== 'AbortError') {
+        rememberError(e);
+        console.error("[AI Translate] String translation failed:", e);
+        setStatus(`Error: ${e.message}${errorHint(e)} (${stats.done} saved before stopping)`);
+      }
+    } finally {
+      busy = false;
+      setBusyUI(false);
+    }
+  };
+
+  const mountStringsPanel = () => {
+    const table = document.querySelector('tr[data-string]')?.closest('table');
+    if (!table) return;
+    panel = document.createElement('div');
+    panel.id = 'wai-panel';
+    panel.className = 'wai-strings';
+    panel.innerHTML = `
+      <span class="wai-title">AI Translation</span>
+      <button class="wai-run" title="Translates the ticked strings into all languages and saves them">Translate selected (0)</button>
+      <button class="wai-stop" disabled>Stop</button>
+      <span class="wai-status">Tick the strings to translate.</span>`;
+    const runBtn = panel.querySelector('.wai-run');
+    runBtn.addEventListener('click', translateStringsPage);
+    panel.querySelector('.wai-stop').addEventListener('click', stopAll);
+    statusEl = panel.querySelector('.wai-status');
+    // WPML's "select all" ticks rows from script (no change event per row), so recount after it
+    table.addEventListener('change', () => setTimeout(() => {
+      runBtn.textContent = `Translate selected (${selectedStrings().length})`;
+    }));
+    table.before(panel);
   };
 
   // ---------------------------------------------------------------------------
@@ -1403,6 +1527,10 @@ Patch rules:
     }
   });
 
-  mountPanel();
-  new MutationObserver(mountPanel).observe(document.body, { childList: true, subtree: true });
+  if (onStringsPage) {
+    mountStringsPanel();
+  } else {
+    mountPanel();
+    new MutationObserver(mountPanel).observe(document.body, { childList: true, subtree: true });
+  }
 })();
