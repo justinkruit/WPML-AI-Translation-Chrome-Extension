@@ -212,6 +212,99 @@
       font-style: italic;
     }
 
+    .tools {
+      margin-top: 12px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+    }
+
+    .tools summary {
+      padding: 8px 12px;
+      font-weight: 500;
+      color: #555;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .tools[open] summary {
+      border-bottom: 1px solid #eee;
+    }
+
+    .tools-body {
+      padding: 4px 12px 12px;
+    }
+
+    .tool-buttons {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .tool-buttons .button {
+      margin-top: 8px;
+      position: relative;
+    }
+
+    /* The hover transform makes the button its own stacking context, so lift the
+       whole button above its siblings or they paint over its tooltip */
+    .tool-buttons .button:hover,
+    .tool-buttons .button:focus-visible {
+      z-index: 20;
+    }
+
+    /* Custom tooltip from data-tip; right column anchors right so it stays inside the popup */
+    .tool-buttons .button[data-tip]::after {
+      content: attr(data-tip);
+      position: absolute;
+      top: calc(100% + 6px);
+      left: 0;
+      z-index: 10;
+      width: max-content;
+      max-width: 300px;
+      padding: 8px 10px;
+      border-radius: 6px;
+      background: #1f2327;
+      color: #e9ecef;
+      font-size: 12px;
+      font-weight: 400;
+      line-height: 1.45;
+      text-align: left;
+      white-space: normal;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+      transition: opacity 0.15s ease 0.3s, visibility 0s linear 0.45s;
+    }
+
+    .tool-buttons .button[data-tip]:nth-child(even)::after {
+      left: auto;
+      right: 0;
+    }
+
+    /* Bottom row opens upwards so the popup never has to grow or clip it */
+    .tool-buttons .button[data-tip]:nth-child(n+3)::after {
+      top: auto;
+      bottom: calc(100% + 6px);
+    }
+
+    .tool-buttons .button[data-tip]:hover::after,
+    .tool-buttons .button[data-tip]:focus-visible::after {
+      opacity: 1;
+      visibility: visible;
+      transition: opacity 0.15s ease 0.3s, visibility 0s linear 0.3s;
+    }
+
+    .health {
+      margin-top: 8px;
+      font-size: 13px;
+      color: #333;
+    }
+
+    .health.warn {
+      color: #856404;
+    }
+
     .footer {
       background: #f8f9fa;
       padding: 16px 24px;
@@ -271,6 +364,20 @@
       <div class="help-text">This prompt guides how the AI translates your content.</div>
       <button id="save-settings" class="button">Save All Settings</button>
     </div>
+
+    <details id="tools" class="tools">
+      <summary>Editor tools &amp; self-repair</summary>
+      <div class="tools-body">
+        <div id="health" class="health">Checking the editor tab…</div>
+        <div class="tool-buttons">
+          <button id="tool-fix" class="button" type="button" data-tip="Use when the extension stops working after a WPML update. Sends a diagnostics summary (no page text, keys or signatures) to your AI model, which suggests new settings. The suggestion is tested with read-only requests and shown to you; nothing changes until you confirm.">Fix with AI</button>
+          <button id="tool-fast" class="button secondary" type="button" data-tip="Translates every untranslated segment of the open job and saves it directly through the WPML API. Doesn't depend on the page layout, so it works even when the toolbar is missing. The editor reloads when done.">Fast Translate (API)</button>
+          <button id="tool-diag" class="button secondary" type="button" data-tip="Copies a technical summary of the editor tab to your clipboard (health check, recent API calls, page structure). No page text, keys or signatures. Paste it into a bug report.">Copy Diagnostics</button>
+          <button id="tool-undo" class="button secondary" type="button" data-tip="Reverts the last fix applied by Fix with AI. Clicking it again returns to the built-in settings.">Undo Fix</button>
+        </div>
+        <div class="help-text">Fix with AI sends a diagnostics summary (no page text, keys or signatures) to your model, tests the suggested fix and asks before applying it. These tools work even when WPML's page changes and the toolbar can't be shown.</div>
+      </div>
+    </details>
 
     <div id="status" class="status"></div>
   </div>

@@ -1,4 +1,4 @@
-# WPML AI Translation Chrome Extension 
+# WPML AI Translation Chrome Extension  
 
 **If you saved time and money with this project. Support it 😉**
 
@@ -51,7 +51,7 @@ Settings apply immediately. There's no need to reload the WPML page.
 
 ## Usage
 
-Open any job in the WPML Advanced Translation Editor (`*.ate.wpml.org`). A toolbar appears under the language header:
+Open any job in the WPML Advanced Translation Editor (any `wpml.org` host, e.g. `ate.wpml.org` or `prod-edge-eate.wpml.org`). A toolbar appears under the language header:
 
 | Button | What it does |
 |---|---|
@@ -59,6 +59,21 @@ Open any job in the WPML Advanced Translation Editor (`*.ate.wpml.org`). A toolb
 | **Translate All** | Same batch translation, but fills and saves each segment through the editor UI. Slower, but you can watch it work. |
 | **Translate Segment** | Translates the currently open segment in place without saving, so you can review it first (press ↓ to save). |
 | **Stop** | Cancels running AI requests and stops the loop. |
+### When WPML changes the editor
+
+Open the extension popup and expand **Editor tools & self-repair** (collapsed by default). It shows a health check of the open editor tab and has these tools, which work even if WPML's page changes so much that the toolbar can't be shown:
+
+| Tool | What it does |
+|---|---|
+| **Fix with AI** | Sends a diagnostics summary to your AI model and proposes a fix. The fix is validated and tested before you confirm it. |
+| **Fast Translate (API)** | Same as the toolbar button; doesn't depend on the page's HTML. |
+| **Copy Diagnostics** | Copies the summary for bug reports. |
+| **Undo Fix** | Restores the settings from before the last AI fix. |
+
+
+Everything that depends on WPML's markup or API (API host, routes, response fields, CSS selectors) lives in one settings object with built-in defaults. A health check runs when the editor opens and warns in the toolbar if something no longer matches, or if the ATE version changed.
+
+**Fix with AI** sends a diagnostics summary to your model: the editor's own recent API calls (URLs with keys and signatures removed, responses as key/type shapes only), selector match counts, the last error and a tag/class outline of the page. No translation text, keys or signatures are included. The model can only suggest changes to that settings object, limited to `wpml.org` hosts. The extension then tests the change with read-only requests and shows you the result before anything is applied. Save routes are never tested automatically.
 
 Segments count as untranslated when they're empty or when their "translation" is still an unchanged copy of the source text. Segments you already translated are never touched.
 
@@ -78,7 +93,7 @@ The popup shows each model's context length to help you choose.
 
 - Chrome or another Chromium-based browser
 - An OpenRouter account with credits
-- Access to the WPML Advanced Translation Editor (`*.ate.wpml.org`)
+- Access to the WPML Advanced Translation Editor (any `wpml.org` host)
 
 ## Troubleshooting
 
